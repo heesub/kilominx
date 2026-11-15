@@ -1,0 +1,1195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Kilominx — 2×2 Megaminx</title>
+<style>
+  :root{
+    --ink:#0b0e14; --panel:#141925; --panel2:#1c2333;
+    --line:#2a3348; --dim:#7c89a4; --text:#e8edf7;
+    --amber:#ffc24b; --amber2:#ff9d2e;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;overflow:hidden}
+  body{
+    background:
+      radial-gradient(120% 90% at 50% -10%, #1a2236 0%, var(--ink) 60%);
+    color:var(--text);
+    font-family:"DM Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    -webkit-user-select:none; user-select:none;
+    touch-action:none;
+  }
+  #scene{position:fixed; inset:0; z-index:0}
+  canvas{display:block}
+
+  .hud{position:fixed; z-index:2; pointer-events:none}
+  .hud *{pointer-events:auto}
+
+  header.hud{
+    top:0; left:0; right:0;
+    display:flex; align-items:baseline; gap:14px;
+    padding:18px 20px;
+  }
+  .brand{
+    font-weight:600; letter-spacing:.18em; font-size:13px;
+    color:var(--amber);
+  }
+  .brand b{color:var(--text); font-weight:600}
+  .sub{font-size:11px; color:var(--dim); letter-spacing:.14em}
+  .movecount{margin-left:auto; font-size:12px; color:var(--dim); letter-spacing:.1em}
+  .movecount b{color:var(--text); font-variant-numeric:tabular-nums}
+  .solved{color:#57e39a !important}
+
+  /* control dock */
+  .dock{
+    position:fixed; z-index:2; left:50%; bottom:22px;
+    transform:translateX(-50%);
+    display:flex; gap:8px; align-items:center;
+    padding:10px; border-radius:16px;
+    background:linear-gradient(180deg, rgba(28,35,51,.9), rgba(20,25,37,.92));
+    border:1px solid var(--line);
+    backdrop-filter:blur(12px);
+    box-shadow:0 18px 50px rgba(0,0,0,.45);
+  }
+  button{
+    font-family:inherit; color:var(--text);
+    background:var(--panel2); border:1px solid var(--line);
+    border-radius:10px; padding:11px 15px; font-size:12px;
+    letter-spacing:.08em; cursor:pointer;
+    transition:transform .08s ease, background .15s, border-color .15s;
+  }
+  button:hover{background:#232c40; border-color:#37425f}
+  button:active{transform:translateY(1px)}
+  button.primary{
+    background:linear-gradient(180deg,var(--amber),var(--amber2));
+    color:#241500; border-color:transparent; font-weight:600;
+  }
+  button.primary:hover{filter:brightness(1.06)}
+  .sep{width:1px; height:26px; background:var(--line); margin:0 2px}
+
+  /* face key / turn pad */
+  .pad{
+    position:fixed; z-index:2; right:18px; top:50%;
+    transform:translateY(-50%);
+    display:grid; grid-template-columns:repeat(2,1fr); gap:6px;
+    padding:12px; border-radius:14px;
+    background:rgba(20,25,37,.82); border:1px solid var(--line);
+    backdrop-filter:blur(10px);
+  }
+  .pad .lbl{
+    grid-column:1/3; font-size:10px; color:var(--dim);
+    letter-spacing:.16em; margin-bottom:2px;
+  }
+  .facebtn{
+    display:flex; align-items:center; gap:7px;
+    padding:7px 9px; font-size:11px; min-width:74px;
+  }
+  .swatch{width:12px; height:12px; border-radius:3px; box-shadow:0 0 0 1px rgba(0,0,0,.3) inset}
+
+  /* color palette (paint mode) */
+  .palette{
+    position:fixed; z-index:2; left:50%; bottom:84px;
+    transform:translateX(-50%);
+    display:flex; flex-direction:column; gap:8px; align-items:center;
+    padding:12px 14px; border-radius:14px;
+    background:linear-gradient(180deg, rgba(28,35,51,.92), rgba(20,25,37,.94));
+    border:1px solid var(--line); backdrop-filter:blur(12px);
+    box-shadow:0 14px 40px rgba(0,0,0,.4);
+  }
+  .palette[hidden]{display:none}
+  .plbl{font-size:10px; color:var(--dim); letter-spacing:.14em}
+  .swatches{display:flex; gap:7px; flex-wrap:wrap; justify-content:center; max-width:340px}
+  .chip{
+    position:relative;
+    width:26px; height:26px; border-radius:7px; cursor:pointer;
+    border:2px solid transparent; transition:transform .08s, border-color .12s;
+    box-shadow:0 0 0 1px rgba(0,0,0,.35) inset;
+  }
+  .chip:hover{transform:scale(1.1)}
+  .chip.active{border-color:var(--text); transform:scale(1.12)}
+  .coloredit{
+    position:absolute; bottom:calc(100% + 8px); left:50%; transform:translateX(-50%);
+    display:flex; gap:6px; align-items:center; z-index:5;
+    padding:8px; border-radius:10px;
+    background:var(--panel2); border:1px solid var(--line);
+    box-shadow:0 10px 30px rgba(0,0,0,.5);
+  }
+  .coloredit[hidden]{display:none}
+  .coloredit::after{
+    content:""; position:absolute; top:100%; left:50%; transform:translateX(-50%);
+    border:6px solid transparent; border-top-color:var(--panel2);
+  }
+  .cename{
+    font-family:inherit; font-size:12px; width:130px; color:var(--text);
+    background:var(--ink); border:1px solid var(--line); border-radius:7px;
+    padding:6px 8px; outline:none;
+  }
+  .cename:focus{border-color:var(--amber)}
+  .cename.bad{border-color:#d63b2f}
+  .ceswatch{
+    width:30px; height:30px; padding:0; border:1px solid var(--line);
+    border-radius:7px; background:none; cursor:pointer;
+  }
+  button.paint-on{
+    background:linear-gradient(180deg,var(--amber),var(--amber2));
+    color:#241500; border-color:transparent; font-weight:600;
+  }
+  .pwarn{
+    font-size:11px; color:#ffd7d0; letter-spacing:.02em; line-height:1.5;
+    max-width:320px; text-align:center; padding:7px 10px; border-radius:9px;
+    background:rgba(214,59,47,.16); border:1px solid rgba(214,59,47,.5);
+  }
+  .pwarn[hidden]{display:none}
+  .pwarn b{color:#fff}
+  .preset-btn{
+    font-size:11px; padding:8px 12px; letter-spacing:.04em;
+  }
+  @keyframes shakeX{
+    0%,100%{transform:translateX(-50%)}
+    20%{transform:translateX(calc(-50% - 7px))}
+    40%{transform:translateX(calc(-50% + 7px))}
+    60%{transform:translateX(calc(-50% - 5px))}
+    80%{transform:translateX(calc(-50% + 5px))}
+  }
+  .palette.shake{animation:shakeX .4s}
+
+  /* solution panel */
+  .solution{
+    position:fixed; z-index:2; left:50%; bottom:84px;
+    transform:translateX(-50%);
+    display:flex; flex-direction:column; gap:10px; align-items:center;
+    padding:14px 16px; border-radius:14px; max-width:min(560px,92vw);
+    background:linear-gradient(180deg, rgba(28,35,51,.94), rgba(20,25,37,.96));
+    border:1px solid var(--line); backdrop-filter:blur(12px);
+    box-shadow:0 14px 40px rgba(0,0,0,.45);
+  }
+  .solution[hidden]{display:none}
+  .slabel{font-size:11px; color:var(--amber); letter-spacing:.12em; display:flex; align-items:center; gap:7px}
+  .slabel.warn{color:#ffd7d0}
+  .slabel.human-phase{color:#ffb454}
+  .sbadge{
+    display:inline-block; font-size:10px; font-weight:700; letter-spacing:.06em;
+    padding:2px 8px; border-radius:6px; text-transform:uppercase;
+  }
+  .sbadge.opt{ background:rgba(87,227,154,.18); color:#57e39a; box-shadow:0 0 0 1px rgba(87,227,154,.4) inset; }
+  .sbadge.human{ background:rgba(255,157,46,.18); color:#ff9d2e; box-shadow:0 0 0 1px rgba(255,157,46,.4) inset; }
+  .smoves{
+    display:flex; gap:5px; flex-wrap:wrap; justify-content:center;
+    font-size:11px; max-height:96px; overflow-y:auto;
+  }
+  .mv{
+    display:flex; align-items:center; gap:5px;
+    padding:4px 8px; border-radius:7px; background:var(--panel2);
+    border:1px solid var(--line); white-space:nowrap;
+  }
+  .mv.done{opacity:.4}
+  .mv.current{border-color:var(--amber); background:#2c2410}
+  .mv .dot{width:10px;height:10px;border-radius:3px;box-shadow:0 0 0 1px rgba(0,0,0,.3) inset}
+  .scontrols{display:flex; gap:8px}
+
+  .hint{
+    position:fixed; z-index:2; left:20px; bottom:22px;
+    font-size:11px; color:var(--dim); line-height:1.7;
+    letter-spacing:.04em; max-width:210px;
+  }
+  .hint b{color:var(--text)}
+  kbd{
+    background:var(--panel2); border:1px solid var(--line);
+    border-radius:5px; padding:1px 6px; font-size:10px; color:var(--text)
+  }
+
+  @media (max-width:720px){
+    .pad{top:auto; bottom:96px; right:50%; transform:translateX(50%);
+         grid-template-columns:repeat(4,1fr)}
+    .pad .lbl{grid-column:1/5}
+    .facebtn{min-width:0; justify-content:center}
+    .facebtn span.name{display:none}
+    .hint{display:none}
+    .dock{bottom:16px; padding:8px; gap:6px}
+    button{padding:10px 12px}
+  }
+</style>
+</head>
+<body>
+<div id="scene"></div>
+
+<header class="hud">
+  <div>
+    <div class="brand"><b>KILOMINX</b> · 2×2 MEGAMINX</div>
+    <div class="sub">DODECAHEDRAL TWISTY PUZZLE</div>
+  </div>
+  <div class="movecount">MOVES <b id="moves">0</b></div>
+</header>
+
+<div class="pad" id="pad">
+  <div class="lbl">TURN A FACE ▸ shift-click for CCW</div>
+</div>
+
+<div class="dock">
+  <button id="scramble" class="primary">SCRAMBLE</button>
+  <button id="reset">RESET</button>
+  <div class="sep"></div>
+  <button id="undo">UNDO</button>
+  <button id="dir" title="Toggle turn direction">CW ↻</button>
+  <div class="sep"></div>
+  <button id="solve" title="Find the shortest solution">SOLVE</button>
+  <button id="paint" title="Paint stickers to match a real cube">PAINT</button>
+</div>
+
+<div class="palette" id="palette" hidden>
+  <div class="plbl">클릭: 페인트색 선택 · 더블클릭: 색 이름 입력하거나 직접 고르기</div>
+  <div class="swatches" id="swatches"></div>
+  <div class="pwarn" id="pwarn" hidden></div>
+  <button id="preset" class="preset-btn">색 초기화하고 나가기</button>
+</div>
+
+<div class="solution" id="solution" hidden>
+  <div class="slabel" id="slabel"></div>
+  <div class="smoves" id="smoves"></div>
+  <div class="scontrols">
+    <button id="splay">▶ PLAY</button>
+    <button id="sstep">STEP ›</button>
+    <button id="sclose">CLOSE</button>
+  </div>
+</div>
+
+<div class="hint">
+  <b>Drag</b> to orbit · <b>scroll</b> to zoom<br>
+  <b>Click a face</b> on the puzzle to turn it<br>
+  <kbd>Shift</kbd> + click = reverse
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.module.min.js"
+}}
+</script>
+
+<script type="module">
+import * as THREE from "three";
+
+/* ---------- constants ---------- */
+const PHI = (1+Math.sqrt(5))/2, IPHI = 1/PHI;
+const TURN = -2*Math.PI/5;          // 72° per face turn (signed for CW)
+
+// 12 face colors — a considered dodecahedral palette (opposite faces are tonal pairs)
+const COLORS = [
+  0xf5f7fa, 0x2d63d6, 0xe4b217, 0xd63b2f, 0xe05fa0,
+  0xe58a1e, 0x3ecb5f, 0x8a949e, 0x35b6a6, 0x5b3aa8,
+  0xf0c0a0, 0x54b8e8
+];
+const NAMES = ["White","Blue","Yellow","Red","Pink","Orange",
+               "BrightGreen","Grey","Teal","Violet","Skin","Sky"];
+
+/* ---------- geometry: dodecahedron (derived from its edge graph) ---------- */
+// 20 vertices
+const VERT = [];
+for(const x of [-1,1]) for(const y of [-1,1]) for(const z of [-1,1]) VERT.push([x,y,z]);
+for(const y of [-IPHI,IPHI]) for(const z of [-PHI,PHI]) VERT.push([0,y,z]);
+for(const x of [-IPHI,IPHI]) for(const y of [-PHI,PHI]) VERT.push([x,y,0]);
+for(const x of [-PHI,PHI]) for(const z of [-IPHI,IPHI]) VERT.push([x,0,z]);
+
+const CIRC = Math.sqrt(3);                     // circumradius for these coords
+const _d2=(a,b)=>{let s=0;for(let k=0;k<3;k++)s+=(a[k]-b[k])**2;return s;};
+const _nm=v=>{const l=Math.hypot(...v);return[v[0]/l,v[1]/l,v[2]/l];};
+const _cr=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
+const _sb=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]];
+const _dt=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+
+// edge graph (edge length = 2/phi)
+const EDGE2=(2*IPHI)**2;
+const ADJV=VERT.map(()=>[]);
+for(let i=0;i<20;i++) for(let j=i+1;j<20;j++)
+  if(Math.abs(_d2(VERT[i],VERT[j])-EDGE2)<1e-6){ ADJV[i].push(j); ADJV[j].push(i); }
+
+// trace the 12 pentagonal faces
+const FACES=[]; const _seen=new Set();
+for(let s=0;s<20;s++) for(const t of ADJV[s]){
+  let face=[s], prev=s, cur=t;
+  for(let step=0; step<5 && cur!==s; step++){
+    face.push(cur);
+    const cand=ADJV[cur].filter(x=>x!==prev);
+    let nxt=cand[0];
+    if(face.length>=3){
+      const n=_nm(_cr(_sb(VERT[face[1]],VERT[face[0]]), _sb(VERT[face[2]],VERT[face[0]])));
+      const d0=_dt(VERT[face[0]],n);
+      cand.sort((a,b)=>Math.abs(_dt(VERT[a],n)-d0)-Math.abs(_dt(VERT[b],n)-d0));
+      nxt=cand[0];
+    }
+    prev=cur; cur=nxt;
+  }
+  if(face.length===5){
+    const k=[...face].sort((a,b)=>a-b).join(",");
+    if(!_seen.has(k)){ _seen.add(k); FACES.push(face); }
+  }
+}
+// face normals from actual centroids
+const FACE_N = FACES.map(f=>{
+  const c=[0,0,0]; f.forEach(i=>{c[0]+=VERT[i][0];c[1]+=VERT[i][1];c[2]+=VERT[i][2];});
+  return _nm([c[0]/5,c[1]/5,c[2]/5]);
+});
+
+/* per-face plane distance — a corner sits on face fi when its live position,
+   projected onto the face normal, matches this maximum. Used for geometry-based
+   (not label-based) selection so the picker never drifts out of sync. */
+const FACE_DIST = FACE_N.map(n => Math.max(...VERT.map(v => _dt(v,n))));
+
+/* which 3 faces meet at each vertex (the corner piece's stickers) */
+const vertFaces = VERT.map((_,vi)=> FACES
+  .map((f,fi)=>({fi, in:f.includes(vi)}))
+  .filter(o=>o.in).map(o=>o.fi));
+
+/* ---------- three.js scaffold ---------- */
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(42, innerWidth/innerHeight, 0.1, 100);
+const renderer = new THREE.WebGLRenderer({antialias:true, alpha:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth, innerHeight);
+document.getElementById("scene").appendChild(renderer.domElement);
+
+scene.add(new THREE.AmbientLight(0xffffff, .62));
+const key = new THREE.DirectionalLight(0xffffff, 1.05); key.position.set(4,6,7); scene.add(key);
+const rim = new THREE.DirectionalLight(0x88aaff, .5); rim.position.set(-6,-3,-5); scene.add(rim);
+const fill = new THREE.PointLight(0xffe0a0,.35,40); fill.position.set(-4,4,6); scene.add(fill);
+
+const world = new THREE.Group();          // holds all corner pieces
+scene.add(world);
+
+/* body (black plastic) — a small dodecahedron rendered dark under the stickers */
+const bodyGeo = new THREE.DodecahedronGeometry(CIRC*0.995);
+const body = new THREE.Mesh(bodyGeo,
+  new THREE.MeshStandardMaterial({color:0x11151f, roughness:.55, metalness:.2}));
+world.add(body);
+
+/* fixed decorative dot at each pentagon face center — attached to `world`,
+   not to any piece, so it stays centered while the face turns beneath it. */
+const discs=[];
+FACES.forEach((face, fi)=>{
+  // true face-plane center = average of its 5 corner positions
+  const c = new THREE.Vector3();
+  face.forEach(i=>c.add(new THREE.Vector3(...VERT[i])));
+  c.multiplyScalar(1/5);
+  const n = new THREE.Vector3(...FACE_N[fi]);
+  const disc = new THREE.Mesh(
+    new THREE.CircleGeometry(0.12, 40),
+    new THREE.MeshStandardMaterial({
+      color:COLORS[fi], roughness:.4, metalness:.15,
+      side:THREE.DoubleSide, polygonOffset:true,
+      polygonOffsetFactor:-2, polygonOffsetUnits:-2
+    })
+  );
+  disc.userData.colorIdx = fi;   // center dot keeps the face's original color
+  // orient the disc so its face lies in the pentagon plane, lifted just above it
+  disc.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1), n);
+  disc.position.copy(c).add(n.clone().multiplyScalar(0.03));
+  world.add(disc); discs.push(disc);
+});
+
+/* one corner piece per vertex */
+const pieces = VERT.map((v,vi)=>{
+  const grp = new THREE.Group();
+  vertFaces[vi].forEach(fi=>{
+    // the sticker uses the 3 verts of face fi nearest this corner (a triangular cap slice)
+    // simpler & clean: give each corner a small pentagon-slice by clipping face verts near it
+    const faceV = FACES[fi];
+    // pick this vert + its 2 neighbors on the pentagon + face-relative inner point
+    const st = makeCornerSticker(vi, fi, COLORS[fi]);
+    st.userData.vi = vi;                 // which corner this sticker belongs to
+    grp.add(st);
+  });
+  // homeFaces = the 3 faces this corner belongs to when solved
+  grp.userData = {vi, homeFaces: vertFaces[vi].slice()};
+  world.add(grp);
+  return grp;
+});
+
+const _tmpV = new THREE.Vector3();
+/* pieces currently sitting on face fi, decided purely from live geometry */
+function facePieces(fi){
+  const n = new THREE.Vector3(...FACE_N[fi]);
+  return pieces.filter(p=>{
+    const d = _tmpV.set(...VERT[p.userData.vi]).applyQuaternion(p.quaternion).dot(n);
+    return Math.abs(d - FACE_DIST[fi]) < 0.35;
+  });
+}
+
+/* a corner sticker = the quarter of face fi that belongs to corner vi */
+function makeCornerSticker(vi, fi, color){
+  const face = FACES[fi];
+  const pos = face.indexOf(vi);
+  const n = new THREE.Vector3(...FACE_N[fi]);
+  const P = face.map(i=>new THREE.Vector3(...VERT[i]));
+  const C = new THREE.Vector3(); P.forEach(p=>C.add(p)); C.multiplyScalar(1/5);
+  const prev = P[(pos+4)%5], self = P[pos], next = P[(pos+1)%5];
+  // quad: corner vert, midpoint to next, face center, midpoint to prev
+  const mNext = self.clone().add(next).multiplyScalar(.5);
+  const mPrev = self.clone().add(prev).multiplyScalar(.5);
+  const quad = [self, mNext, C.clone(), mPrev];
+  // inset toward its own centroid for the visible gap
+  const qc = new THREE.Vector3(); quad.forEach(p=>qc.add(p)); qc.multiplyScalar(.25);
+  const ins = quad.map(p=>qc.clone().add(p.clone().sub(qc).multiplyScalar(.9)));
+  // lift slightly along normal so it sits above the black body
+  ins.forEach(p=>p.add(n.clone().multiplyScalar(0.02)));
+  const g = new THREE.BufferGeometry();
+  const pp=[], nn=[];
+  // ensure the quad is wound so its face normal points outward (along n),
+  // otherwise the lit side faces inward and the sticker renders black.
+  const e1 = ins[1].clone().sub(ins[0]);
+  const e2 = ins[2].clone().sub(ins[0]);
+  const faceNormal = new THREE.Vector3().crossVectors(e1, e2);
+  const order = faceNormal.dot(n) >= 0 ? [0,1,2,3] : [0,3,2,1];
+  const q = order.map(i=>ins[i]);
+  const tri=(a,b,c)=>{pp.push(a.x,a.y,a.z,b.x,b.y,b.z,c.x,c.y,c.z);
+                      for(let k=0;k<3;k++) nn.push(n.x,n.y,n.z);};
+  tri(q[0],q[1],q[2]); tri(q[0],q[2],q[3]);
+  g.setAttribute("position",new THREE.Float32BufferAttribute(pp,3));
+  g.setAttribute("normal",new THREE.Float32BufferAttribute(nn,3));
+  const m = new THREE.MeshStandardMaterial({color, roughness:.3, metalness:.14,
+                                            emissive:color, emissiveIntensity:.05,
+                                            side:THREE.DoubleSide});
+  const mesh = new THREE.Mesh(g,m);
+  mesh.userData.faceId = fi;
+  mesh.userData.colorIdx = fi;   // which color slot this sticker shows (0..11)
+  return mesh;
+}
+
+/* ---------- camera framing ---------- */
+let camDist = 6.2;
+const camRot = {x:-0.5, y:0.6};
+function updateCam(){
+  camera.position.set(
+    camDist*Math.cos(camRot.x)*Math.sin(camRot.y),
+    camDist*Math.sin(camRot.x),
+    camDist*Math.cos(camRot.x)*Math.cos(camRot.y)
+  );
+  camera.lookAt(0,0,0);
+}
+updateCam();
+
+/* ---------- turn logic (pure geometry — no label tracking) ---------- */
+let animating=false, moveCount=0, dirCW=true;
+let paintMode=false, paintColor=0;   // paintColor is a COLOR INDEX (0..11)
+const history=[];
+const $moves = document.getElementById("moves");
+
+/* bake a finished rotation into a piece's own transform and snap to lattice */
+function bakeTurn(p, axis, angle){
+  const q=new THREE.Quaternion().setFromAxisAngle(axis, angle);
+  p.quaternion.premultiply(q);
+  p.quaternion.normalize();
+}
+
+function turnFace(fi, dir, record=true, instant=false){
+  if(animating) return;
+  const grp = facePieces(fi);              // selected live, always correct
+  const axis = new THREE.Vector3(...FACE_N[fi]).normalize();
+  const angle = TURN * (dir>0?1:-1);
+
+  if(instant){
+    grp.forEach(p=>bakeTurn(p, axis, angle));
+    if(record){ history.push({fi,dir}); moveCount++; $moves.textContent=moveCount;}
+    checkSolved();
+    return;
+  }
+
+  animating=true;
+  const pivot = new THREE.Group();
+  world.add(pivot);
+  grp.forEach(p=>pivot.attach(p));         // reparent: pivot rotates them as a unit
+  const t0=performance.now(), dur=230;
+  (function step(){
+    const t=Math.min(1,(performance.now()-t0)/dur);
+    const e = t<.5 ? 2*t*t : 1-Math.pow(-2*t+2,2)/2;   // ease in-out
+    pivot.setRotationFromAxisAngle(axis, angle*e);
+    if(t<1) requestAnimationFrame(step);
+    else{
+      pivot.setRotationFromAxisAngle(axis, angle);
+      grp.forEach(p=>{ world.attach(p); p.position.set(0,0,0); }); // bake rotation, keep centered
+      world.remove(pivot);
+      if(record){ history.push({fi,dir}); moveCount++; $moves.textContent=moveCount; }
+      animating=false; checkSolved();
+    }
+  })();
+}
+
+/* solved = every piece's 3 home-face normals map back onto themselves.
+   This checks both position and twist, exactly like a physical puzzle. */
+const _fn = new THREE.Vector3();
+function checkSolved(){
+  const solved = pieces.every(p =>
+    p.userData.homeFaces.every(fi=>{
+      _fn.set(...FACE_N[fi]).applyQuaternion(p.quaternion);
+      return _fn.dot(new THREE.Vector3(...FACE_N[fi])) > 0.9999;
+    })
+  );
+  const mc=document.getElementById("moves").parentElement;
+  mc.classList.toggle("solved", solved && moveCount>0);
+}
+
+/* ---------- paint-state validity (full solvability check) ---------- */
+// SLOTS[vi] = the 3 faces meeting at corner vi, ordered CCW about the outward
+// vertex normal, giving each corner a fixed slot order so twist is well-defined.
+const SLOTS = VERT.map((_,vi)=>{
+  const n=new THREE.Vector3(...VERT[vi]).normalize();
+  const fs=vertFaces[vi];
+  const r0=new THREE.Vector3(...FACE_N[fs[0]]);
+  const proj=r0.clone().sub(n.clone().multiplyScalar(r0.dot(n))).normalize();
+  const bi=new THREE.Vector3().crossVectors(n,proj).normalize();
+  const ang=f=>{const v=new THREE.Vector3(...FACE_N[f]);const p=v.clone().sub(n.clone().multiplyScalar(v.dot(n)));return Math.atan2(p.dot(bi),p.dot(proj));};
+  return [...fs].sort((a,b)=>ang(a)-ang(b));
+});
+const PIECE_ID = SLOTS.map(s=>[...s].sort((a,b)=>a-b).join(","));
+const _cvv=new THREE.Vector3();
+
+// read the painted color shown at each corner, in that corner's SLOTS order.
+function readColorAt(){
+  const colorAt=VERT.map(()=>[null,null,null]);
+  pieces.forEach(p=>{
+    // current location vertex of this piece
+    const pos=_cvv.set(...VERT[p.userData.vi]).applyQuaternion(p.quaternion);
+    let loc=-1,bd=1e9;
+    VERT.forEach((v,j)=>{const d=(pos.x-v[0])**2+(pos.y-v[1])**2+(pos.z-v[2])**2;if(d<bd){bd=d;loc=j;}});
+    // each sticker mesh shows a color on the face it currently points to
+    p.traverse(o=>{
+      if(!o.isMesh) return;
+      const homeFace=o.userData.faceId;
+      if(homeFace==null) return;
+      const dir=new THREE.Vector3(...FACE_N[homeFace]).applyQuaternion(p.quaternion);
+      let f=-1,fb=-1e9;
+      FACE_N.forEach((n,fi)=>{const dd=dir.x*n[0]+dir.y*n[1]+dir.z*n[2];if(dd>fb){fb=dd;f=fi;}});
+      // the sticker's color slot (stable even after recoloring the palette)
+      const ci=o.userData.colorIdx;
+      if(ci==null) return;
+      const slotIdx=SLOTS[loc].indexOf(f);
+      if(slotIdx>=0) colorAt[loc][slotIdx]=ci;
+    });
+  });
+  return colorAt;
+}
+
+// full validity: color counts, real pieces, no duplicates, even parity, twist sum %3==0
+function validateState(){
+  const colorAt=readColorAt();
+  const cnt=new Array(12).fill(0);
+  colorAt.forEach(sl=>sl.forEach(c=>{ if(c!=null) cnt[c]++; }));
+  for(let c=0;c<12;c++) if(cnt[c]!==5)
+    return {ok:false, reason:`${NAMES[c]} 색이 ${cnt[c]}개예요 (각 색은 5개여야 해요)`};
+
+  const used=new Set(); const perm=new Array(20); const ori=new Array(20);
+  for(let vi=0;vi<20;vi++){
+    const set=[...colorAt[vi]].sort((a,b)=>a-b).join(",");
+    const solvedVi=PIECE_ID.indexOf(set);
+    if(solvedVi<0) return {ok:false, reason:"실제로 존재하지 않는 색 조합의 조각이 있어요"};
+    if(used.has(set)) return {ok:false, reason:"같은 색 조합의 조각이 중복돼요"};
+    used.add(set);
+    perm[vi]=solvedVi;
+    const target=SLOTS[solvedVi], cur=colorAt[vi];
+    let r=-1;
+    for(let k=0;k<3;k++) if(cur[0]===target[k]&&cur[1]===target[(k+1)%3]&&cur[2]===target[(k+2)%3]){r=k;break;}
+    if(r<0) return {ok:false, reason:"조각의 색 순서가 거울상이에요 (뒤집힌 배치)"};
+    ori[vi]=r;
+  }
+  const seen=new Array(20).fill(false); let transp=0;
+  for(let i=0;i<20;i++){ if(seen[i])continue; let j=i,len=0; while(!seen[j]){seen[j]=true;j=perm[j];len++;} transp+=len-1; }
+  if(transp%2!==0) return {ok:false, reason:"두 조각만 뒤바뀐 배치예요 (현실에선 불가능)"};
+  if(ori.reduce((a,b)=>a+b,0)%3!==0) return {ok:false, reason:"조각 하나만 비틀린 배치예요 (현실에선 불가능)"};
+  return {ok:true, perm, ori};
+}
+
+// build the quaternion for a piece whose home is `hp`, placed at location `L` with twist `t`
+function quatFromTo(hp, L, t){
+  const from1=new THREE.Vector3(...VERT[hp]).normalize();
+  const to1=new THREE.Vector3(...VERT[L]).normalize();
+  const from2=new THREE.Vector3(...FACE_N[SLOTS[hp][0]]).normalize();
+  const to2=new THREE.Vector3(...FACE_N[SLOTS[L][t%3]]).normalize();
+  const q1=new THREE.Quaternion().setFromUnitVectors(from1,to1);
+  const f2r=from2.clone().applyQuaternion(q1);
+  const proj=v=>v.clone().sub(to1.clone().multiplyScalar(v.dot(to1))).normalize();
+  const a=proj(f2r), b=proj(to2);
+  let ang=Math.acos(Math.max(-1,Math.min(1,a.dot(b))));
+  if(new THREE.Vector3().crossVectors(a,b).dot(to1)<0) ang=-ang;
+  return new THREE.Quaternion().setFromAxisAngle(to1,ang).multiply(q1);
+}
+// move the actual pieces so their positions/orientations match the painted colors
+function applyPaintedState(perm, ori){
+  // perm[L] = solved-id of the piece that belongs at location L; ori[L] = its twist
+  pieces.forEach(p=>{
+    // find the location L where this piece (home = p.userData.vi) should go
+    const L=perm.indexOf(p.userData.vi);
+    p.position.set(0,0,0);
+    // (3-ori)%3: validate() measures twist by color slot, quatFromTo/readCubie by piece
+    // rotation — opposite sign — so invert it here to build a truly reachable state.
+    p.quaternion.copy(quatFromTo(p.userData.vi, L, (3-ori[L])%3));
+    // the painted colors are now expressed by the pieces' PHYSICAL arrangement,
+    // so each sticker returns to showing its own face color.
+    p.traverse(o=>{
+      if(o.isMesh && o.userData.faceId!=null){
+        o.userData.colorIdx=o.userData.faceId;
+        o.material.color.setHex(COLORS[o.userData.faceId]);
+        o.material.emissive.setHex(COLORS[o.userData.faceId]);
+      }
+    });
+  });
+}
+
+/* ---------- solver (IDA* optimal, shallow) ---------- */
+// permutation move tables: for each (face,dir), how locations map and how slots twist.
+function buildSolverMove(fi,dir){
+  const axis=new THREE.Vector3(...FACE_N[fi]);
+  const angle=TURN*(dir>0?1:-1);
+  const q=new THREE.Quaternion().setFromAxisAngle(axis,angle);
+  const locMap=new Array(20), twist=new Array(20).fill(0);
+  for(let vi=0;vi<20;vi++){
+    const onFace=Math.abs(new THREE.Vector3(...VERT[vi]).dot(new THREE.Vector3(...FACE_N[fi]))-FACE_DIST[fi])<0.35;
+    if(!onFace){ locMap[vi]=vi; continue; }
+    const np=new THREE.Vector3(...VERT[vi]).applyQuaternion(q);
+    let nv=-1,bd=1e9; VERT.forEach((v,j)=>{const d=(np.x-v[0])**2+(np.y-v[1])**2+(np.z-v[2])**2;if(d<bd){bd=d;nv=j;}});
+    locMap[vi]=nv;
+    const landDir=new THREE.Vector3(...FACE_N[SLOTS[vi][0]]).applyQuaternion(q);
+    let lf=-1,fb=-1e9; FACE_N.forEach((n,ff)=>{const dd=landDir.dot(new THREE.Vector3(...n));if(dd>fb){fb=dd;lf=ff;}});
+    twist[vi]=((SLOTS[nv].indexOf(lf))%3+3)%3;
+  }
+  return {fi,dir,locMap,twist};
+}
+const SMOVES=[];
+for(let fi=0;fi<12;fi++) for(const dir of [1,-1]) SMOVES.push(buildSolverMove(fi,dir));
+function smApply(cp,co,mv){
+  const ncp=new Array(20),nco=new Array(20);
+  for(let old=0;old<20;old++){ const nw=mv.locMap[old]; ncp[nw]=cp[old]; nco[nw]=(co[old]+mv.twist[old])%3; }
+  return [ncp,nco];
+}
+// read current puzzle into (cp,co): for each location, which solved-piece sits there + its twist
+const _sv=new THREE.Vector3();
+function readCubie(){
+  const cp=new Array(20), co=new Array(20);
+  pieces.forEach(p=>{
+    const pos=_sv.set(...VERT[p.userData.vi]).applyQuaternion(p.quaternion);
+    let loc=-1,bd=1e9; VERT.forEach((v,j)=>{const d=(pos.x-v[0])**2+(pos.y-v[1])**2+(pos.z-v[2])**2;if(d<bd){bd=d;loc=j;}});
+    cp[loc]=p.userData.vi;                    // solved-id of the piece now at loc
+    // twist: where does this piece's slot-0 face point now, vs the slot order at loc
+    const dir=new THREE.Vector3(...FACE_N[SLOTS[p.userData.vi][0]]).applyQuaternion(p.quaternion);
+    let f=-1,fb=-1e9; FACE_N.forEach((n,ff)=>{const dd=dir.dot(new THREE.Vector3(...n));if(dd>fb){fb=dd;f=ff;}});
+    co[loc]=((SLOTS[loc].indexOf(f))%3+3)%3;
+  });
+  return [cp,co];
+}
+function smSolved(cp,co){ for(let i=0;i<20;i++) if(cp[i]!==i||co[i]!==0) return false; return true; }
+function smHeur(cp,co){ let w=0; for(let i=0;i<20;i++) if(cp[i]!==i||co[i]!==0) w++; return Math.ceil(w/5); }
+// IDA*; returns list of SMOVES indices, or null if beyond maxDepth / node budget
+// async IDA* that yields to the UI between depth bounds and periodically within a
+// bound, so deep solves don't freeze the page. Resolves to a move-index list or null.
+function idaSolveAsync(cp0,co0,maxDepth,onProgress){
+  return new Promise(resolve=>{
+    let bound=smHeur(cp0,co0);
+    const path=[];
+    let nodes=0; const NODE_CAP=8000000;    // shallow-optimal only; deeper → human method
+    const startT=Date.now(), TIME_CAP=6000;  // hand off to the human solver after ~6s
+    let capped=false;
+    function dfs(cp,co,g,bound,lastFace){
+      if(++nodes>NODE_CAP){ capped=true; return Infinity; }
+      const f=g+smHeur(cp,co);
+      if(f>bound) return f;
+      if(smSolved(cp,co)) return -1;
+      let min=Infinity;
+      for(let mi=0;mi<SMOVES.length;mi++){
+        if(SMOVES[mi].fi===lastFace) continue;
+        const [ncp,nco]=smApply(cp,co,SMOVES[mi]);
+        path.push(mi);
+        const t=dfs(ncp,nco,g+1,bound,SMOVES[mi].fi);
+        if(t===-1) return -1;
+        if(capped) return Infinity;
+        if(t<min) min=t;
+        path.pop();
+      }
+      return min;
+    }
+    function stepBound(){
+      if(bound>maxDepth || capped || Date.now()-startT>TIME_CAP){ resolve(null); return; }
+      if(onProgress) onProgress(bound, nodes);
+      const t=dfs(cp0,co0,0,bound,-1);
+      if(t===-1){ resolve(path.slice()); return; }
+      if(t===Infinity || capped){ resolve(null); return; }
+      bound=t;
+      setTimeout(stepBound, 0);   // yield to UI, then try the next (deeper) bound
+    }
+    setTimeout(stepBound, 0);
+  });
+}
+// returns {moves:[{fi,dir}...]} or {tooDeep:true} or {already:true}
+async function solveCube(maxDepth=12, onProgress){
+  const [cp,co]=readCubie();
+  if(smSolved(cp,co)) return {already:true};
+  // 1) try optimal IDA* for shallow states (fast, shortest solution)
+  const sol=await idaSolveAsync(cp,co,maxDepth,onProgress);
+  if(sol) return {moves: sol.map(mi=>({fi:SMOVES[mi].fi, dir:SMOVES[mi].dir})), optimal:true};
+  // 2) fall back to the layer method (deterministic, always solves; long but reliable)
+  if(onProgress) onProgress(-1, smWrong(cp,co));
+  await new Promise(r=>setTimeout(r,0));   // let the UI paint the "layer method" label first
+  ensureHumanLib();
+  const hs=await humanSolveAsync(cp,co,onProgress);
+  if(!hs) return {tooDeep:true};
+  return {moves: hs.map(mi=>({fi:SMOVES[mi].fi, dir:SMOVES[mi].dir})), optimal:false};
+}
+
+// ---- human method (Ruwix-style layer method): a deterministic two-stage solver that ALWAYS
+// finishes. Stage 1 fixes every corner's POSITION with conjugated 3-cycles. Stage 2 fixes every
+// corner's ORIENTATION with a GF(3) linear solve over R'D'R D twist tools. Far from optimal
+// (hundreds of moves), but reaches a solution from any state. Tables built lazily on first use. ----
+const smIdx=(fi,dir)=>fi*2+(dir>0?0:1);           // SMOVES index for (face,dir)
+const SINV=SMOVES.map(mv=>smIdx(mv.fi,-mv.dir));  // inverse-move index
+function smSeqApply(cp,co,seq){ for(const mi of seq){ [cp,co]=smApply(cp,co,SMOVES[mi]); } return [cp,co]; }
+function smInvSeq(seq){ return seq.slice().reverse().map(mi=>SINV[mi]); }
+function smEff(seq){ let cp=[...Array(20).keys()], co=new Array(20).fill(0); return smSeqApply(cp,co,seq); }
+// face adjacency (shared edge = 2 shared corners)
+const SFADJ=FACES.map(()=>[]);
+for(let i=0;i<12;i++) for(let j=0;j<12;j++) if(i!==j){ const sh=FACES[i].filter(v=>FACES[j].includes(v)).length; if(sh===2) SFADJ[i].push(j); }
+
+let HUMAN_READY=false, H_BASE=null, H_SETUPS=null, H_TWIST=null;
+const H_CACHE=new Map();
+function ensureHumanLib(){
+  if(HUMAN_READY) return;
+  // base pure 3-cycles: commutators [X,Y] (X len<=3, Y single) giving a 3-cycle, no twist
+  const gen=[]; (function g(pre,d,last){ if(pre.length>=1)gen.push(pre.slice()); if(!d)return;
+    for(let mi=0;mi<24;mi++){ if(SMOVES[mi].fi===last)continue; pre.push(mi); g(pre,d-1,SMOVES[mi].fi); pre.pop(); } })([],3,-1);
+  const base=[];
+  for(const X of gen){ for(let Y=0;Y<24;Y++){
+    const seq=[...X,Y,...smInvSeq(X),SINV[Y]];
+    const [cp,co]=smEff(seq);
+    let moved=[],tw=false; for(let i=0;i<20;i++){ if(co[i]!==0)tw=true; if(cp[i]!==i)moved.push(i); }
+    if(tw||moved.length!==3) continue;
+    base.push({seq,cp:cp.slice()});
+  }}
+  H_BASE=base;
+  // setups for conjugation (len<=4)
+  const setups=[[]]; (function g(pre,d,last){ if(d===0)return;
+    for(let mi=0;mi<24;mi++){ if(SMOVES[mi].fi===last)continue; pre.push(mi); setups.push(pre.slice()); g(pre,d-1,SMOVES[mi].fi); pre.pop(); } })([],4,-1);
+  H_SETUPS=setups;
+  // twist tools: R'D'R D x2 over all adjacent face pairs → pure 4-corner twists spanning GF(3)^19
+  const tw=[];
+  for(let D=0;D<12;D++) for(const R of SFADJ[D]){
+    const rdrd=[smIdx(R,-1),smIdx(D,-1),smIdx(R,1),smIdx(D,1)];
+    const seq=[...rdrd,...rdrd];
+    const [cp,co]=smEff(seq);
+    let permd=false; for(let i=0;i<20;i++) if(cp[i]!==i) permd=true;
+    if(permd) continue;
+    tw.push({seq,co:co.slice()});
+  }
+  H_TWIST=tw;
+  HUMAN_READY=true;
+}
+function dirKey(cp){ const m=[]; for(let i=0;i<20;i++) if(cp[i]!==i) m.push(i); if(m.length!==3) return null;
+  const P=new Array(20); for(let q=0;q<20;q++) P[cp[q]]=q; return m[0]+","+P[m[0]]+","+P[P[m[0]]]; }
+// find a move sequence performing the directed 3-cycle a->b->c (positions), no twist; cached
+function cycleFor(a,b,c){
+  const key=a+","+b+","+c; if(H_CACHE.has(key)) return H_CACHE.get(key);
+  for(const S of H_SETUPS){ for(const bc of H_BASE){
+    const seq=[...S,...bc.seq,...smInvSeq(S)];
+    const [cp,co]=smEff(seq);
+    let tw=false; for(let i=0;i<20;i++) if(co[i]!==0) tw=true;
+    if(tw) continue;
+    if(dirKey(cp)===key){ H_CACHE.set(key,seq); return seq; }
+  }}
+  H_CACHE.set(key,null); return null;
+}
+// stage 1: fix all positions with 3-cycles (ignores orientation)
+function posSolve(cp0,co0){
+  let cp=cp0.slice(), co=co0.slice(); const full=[]; let guard=0;
+  while(guard++<60){
+    let a=-1; for(let i=0;i<20;i++) if(cp[i]!==i){ a=i; break; }
+    if(a<0) break;
+    const home=cp[a];
+    let third=-1; for(let i=0;i<20;i++) if(i!==a&&i!==home&&cp[i]!==i){ third=i; break; }
+    if(third<0){ for(let i=0;i<20;i++) if(i!==a&&i!==home){ third=i; break; } }
+    let locOfA=-1; for(let i=0;i<20;i++) if(cp[i]===a) locOfA=i;
+    const cands=[[a,home,third],[a,third,home],[a,locOfA,third],[a,third,locOfA]];
+    let done=false;
+    for(const [x,y,z] of cands){
+      if(x===y||y===z||x===z) continue;
+      const seq=cycleFor(x,y,z); if(!seq) continue;
+      let tcp=cp.slice(); for(const mi of seq){ const nc=new Array(20); for(let o=0;o<20;o++) nc[SMOVES[mi].locMap[o]]=tcp[o]; tcp=nc; }
+      let w0=0,w1=0; for(let i=0;i<20;i++){ if(cp[i]!==i)w0++; if(tcp[i]!==i)w1++; }
+      if(w1<w0){ [cp,co]=smSeqApply(cp,co,seq); full.push(...seq); done=true; break; }
+    }
+    if(!done) return null;
+  }
+  for(let i=0;i<20;i++) if(cp[i]!==i) return null;
+  return {full,cp,co};
+}
+// stage 2: fix orientation (positions already solved) via GF(3) linear solve over twist tools
+function solveOri(co0){
+  const target=co0.map(v=>((3-v)%3)); const T=H_TWIST.length;
+  const A=[]; for(let r=0;r<20;r++){ const row=new Array(T+1); for(let c=0;c<T;c++) row[c]=H_TWIST[c].co[r]; row[T]=target[r]; A.push(row); }
+  const where=new Array(T).fill(-1); let row=0;
+  for(let col=0; col<T && row<20; col++){
+    let sel=-1; for(let r=row;r<20;r++) if(A[r][col]){ sel=r; break; }
+    if(sel<0) continue;
+    [A[sel],A[row]]=[A[row],A[sel]];
+    const inv=A[row][col]===1?1:2;
+    for(let c=0;c<=T;c++) A[row][c]=(A[row][c]*inv)%3;
+    for(let r=0;r<20;r++) if(r!==row&&A[r][col]){ const f=A[r][col]; for(let c=0;c<=T;c++) A[r][c]=((A[r][c]-f*A[row][c])%3+3)%3; }
+    where[col]=row; row++;
+  }
+  for(let r=0;r<20;r++){ let z=true; for(let c=0;c<T;c++) if(A[r][c]){ z=false; break; } if(z&&A[r][T]) return null; }
+  const x=new Array(T).fill(0); for(let c=0;c<T;c++) if(where[c]>=0) x[c]=A[where[c]][T];
+  const seq=[]; for(let c=0;c<T;c++) for(let r=0;r<x[c];r++) seq.push(...H_TWIST[c].seq);
+  return seq;
+}
+// full layer solve, async so first-use table build + cycle search doesn't freeze the UI
+function humanSolveAsync(cp0,co0,onProgress){
+  return new Promise(resolve=>{
+    setTimeout(()=>{
+      if(onProgress) onProgress(-1, smWrong(cp0,co0));
+      const p=posSolve(cp0,co0);
+      if(!p){ resolve(null); return; }
+      const oseq=solveOri(p.co);
+      if(!oseq){ resolve(null); return; }
+      const full=[...p.full,...oseq];
+      // verify before returning
+      let cp=cp0.slice(), co=co0.slice(); for(const mi of full)[cp,co]=smApply(cp,co,SMOVES[mi]);
+      for(let i=0;i<20;i++) if(cp[i]!==i||co[i]!==0){ resolve(null); return; }
+      resolve(full);
+    },0);
+  });
+}
+function smWrong(cp,co){ let w=0; for(let i=0;i<20;i++) if(cp[i]!==i||co[i]!==0) w++; return w; }
+
+/* ---------- scramble / reset / undo ---------- */
+function scramble(){
+  if(animating || paintMode) return;
+  let seq=[], last=-1;
+  for(let i=0;i<24;i++){
+    let fi; do{ fi=Math.floor(Math.random()*12);}while(fi===last); last=fi;
+    seq.push({fi, dir: Math.random()<.5?1:-1});
+  }
+  // apply instantly, then a short spin for flair
+  seq.forEach(m=>turnFace(m.fi, m.dir, false, true));
+  moveCount=0; history.length=0; $moves.textContent=0;
+  checkSolved();
+}
+function resetCube(){
+  if(animating || paintMode) return;
+  pieces.forEach(p=>{ p.position.set(0,0,0); p.quaternion.identity(); });
+  moveCount=0; history.length=0; $moves.textContent=0; checkSolved();
+}
+function undo(){
+  if(animating||!history.length||paintMode) return;
+  const m=history.pop();
+  turnFace(m.fi, -m.dir, false, false);
+  moveCount=Math.max(0,moveCount-1); $moves.textContent=moveCount;
+}
+
+/* ---------- pointer: orbit + face picking ---------- */
+const ray = new THREE.Raycaster();
+let dragging=false, moved=false, px=0, py=0;
+const el=renderer.domElement;
+
+el.addEventListener("pointerdown", e=>{
+  dragging=true; moved=false; px=e.clientX; py=e.clientY; el.setPointerCapture(e.pointerId);
+});
+el.addEventListener("pointermove", e=>{
+  if(!dragging) return;
+  const dx=e.clientX-px, dy=e.clientY-py;
+  if(Math.abs(dx)+Math.abs(dy)>4) moved=true;
+  camRot.y -= dx*0.008; camRot.x += dy*0.008;
+  camRot.x=Math.max(-1.45,Math.min(1.45,camRot.x));
+  px=e.clientX; py=e.clientY; updateCam();
+});
+el.addEventListener("pointerup", e=>{
+  dragging=false;
+  if(moved || animating) return;
+  // pick a face
+  const r=el.getBoundingClientRect();
+  const nx=((e.clientX-r.left)/r.width)*2-1, ny=-((e.clientY-r.top)/r.height)*2+1;
+  ray.setFromCamera(new THREE.Vector2(nx,ny), camera);
+  const meshes=[]; pieces.forEach(p=>p.traverse(o=>{if(o.isMesh)meshes.push(o);}));
+  const hit=ray.intersectObjects(meshes,false)[0];
+  if(!hit) return;
+
+  if(paintMode){
+    // paint the clicked sticker with the selected color index — no rotation
+    hit.object.userData.colorIdx = paintColor;
+    const m = hit.object.material;
+    if(m && m.color){
+      m.color.setHex(COLORS[paintColor]);
+      m.emissive.setHex(COLORS[paintColor]);
+    }
+    return;
+  }
+
+  // turn the face this sticker CURRENTLY sits on — found from the live hit
+  // point, not the sticker's original face id (which is fixed at build time).
+  const dirVec = hit.point.clone().normalize();
+  let fid=-1, best=-Infinity;
+  FACE_N.forEach((n,i)=>{
+    const d = dirVec.x*n[0]+dirVec.y*n[1]+dirVec.z*n[2];
+    if(d>best){ best=d; fid=i; }
+  });
+  if(fid>=0){
+    const dir = (e.shiftKey ? -1 : 1) * (dirCW?1:-1);
+    turnFace(fid, dir, true, false);
+  }
+});
+el.addEventListener("wheel", e=>{
+  e.preventDefault();
+  camDist=Math.max(4,Math.min(11, camDist + e.deltaY*0.003)); updateCam();
+},{passive:false});
+
+/* ---------- face turn pad ---------- */
+const pad=document.getElementById("pad");
+const padSwatches=[];
+FACE_N.forEach((_,fi)=>{
+  const b=document.createElement("button");
+  b.className="facebtn";
+  const sw=document.createElement("span"); sw.className="swatch";
+  sw.style.background="#"+COLORS[fi].toString(16).padStart(6,"0");
+  padSwatches[fi]=sw;
+  const nm=document.createElement("span"); nm.className="name"; nm.textContent=NAMES[fi];
+  b.append(sw,nm);
+  b.addEventListener("click",e=>{
+    if(paintMode) return;
+    const dir=(e.shiftKey?-1:1)*(dirCW?1:-1);
+    turnFace(fi,dir,true,false);
+  });
+  pad.appendChild(b);
+});
+
+/* ---------- dock buttons ---------- */
+document.getElementById("scramble").onclick=scramble;
+document.getElementById("reset").onclick=resetCube;
+document.getElementById("undo").onclick=undo;
+const dirBtn=document.getElementById("dir");
+dirBtn.onclick=()=>{ dirCW=!dirCW; dirBtn.textContent=dirCW?"CW ↻":"CCW ↺"; };
+
+/* ---------- color palette / paint mode ---------- */
+const paintBtn=document.getElementById("paint");
+const palette=document.getElementById("palette");
+const swatches=document.getElementById("swatches");
+let activeChip=null;
+
+// repaint every sticker, center disc, and palette chip from the current COLORS[]
+function refreshColor(idx){
+  const hex=COLORS[idx];
+  pieces.forEach(p=>p.traverse(o=>{
+    if(o.isMesh && o.userData.colorIdx===idx){
+      o.material.color.setHex(hex); o.material.emissive.setHex(hex);
+    }
+  }));
+  discs.forEach(d=>{ if(d.userData.colorIdx===idx){ d.material.color.setHex(hex); d.material.emissive&&d.material.emissive.setHex(hex);} });
+  const chip=swatches.children[idx];
+  if(chip){ chip.style.background="#"+hex.toString(16).padStart(6,"0"); const inp=chip.querySelector("input"); if(inp) inp.value="#"+hex.toString(16).padStart(6,"0"); }
+  if(typeof padSwatches!=="undefined" && padSwatches[idx]) padSwatches[idx].style.background="#"+hex.toString(16).padStart(6,"0");
+  if(typeof solution!=="undefined" && solution && !solPanel.hidden) renderSolution();
+}
+
+// resolve a typed color name (or hex) to a numeric hex, or null if unrecognized
+const _cctx=document.createElement("canvas").getContext("2d");
+function nameToHex(str){
+  const s=str.trim();
+  if(!s) return null;
+  // an explicit black request is the only way #000000 is accepted
+  if(/^(black|#000|#000000|rgb\(\s*0\s*,\s*0\s*,\s*0\s*\))$/i.test(s)) return 0x000000;
+  _cctx.fillStyle="#000";              // baseline: invalid input leaves this unchanged
+  _cctx.fillStyle=s;                   // browser parses names, rgb(), hex, hsl()...
+  const parsed=_cctx.fillStyle;        // normalized to "#rrggbb" or "rgba(...)"
+  if(parsed==="#000000") return null;  // stayed baseline → unrecognized
+  if(/^#[0-9a-f]{6}$/i.test(parsed)) return parseInt(parsed.slice(1),16);
+  const m=parsed.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+  if(m) return (+m[1]<<16)|(+m[2]<<8)|(+m[3]);
+  return null;
+}
+
+const chips=[];
+COLORS.forEach((col,i)=>{
+  const chip=document.createElement("div");
+  chip.className="chip"+(i===0?" active":"");
+  chip.style.background="#"+col.toString(16).padStart(6,"0");
+  chip.title=NAMES[i]+" — 클릭: 페인트색 선택 · 더블클릭: 색 바꾸기";
+
+  // editor popover: color name text field + native color picker
+  const pop=document.createElement("div");
+  pop.className="coloredit"; pop.hidden=true;
+  const nameInp=document.createElement("input");
+  nameInp.type="text"; nameInp.placeholder="색 이름 (예: sky blue)"; nameInp.className="cename";
+  const swatchInp=document.createElement("input");
+  swatchInp.type="color"; swatchInp.value="#"+col.toString(16).padStart(6,"0"); swatchInp.className="ceswatch";
+  pop.append(nameInp, swatchInp);
+  chip.appendChild(pop);
+
+  const setColor=hex=>{ COLORS[i]=hex; refreshColor(i); swatchInp.value="#"+hex.toString(16).padStart(6,"0"); };
+
+  chip.addEventListener("click",e=>{
+    if(pop.contains(e.target)) return;   // clicks inside editor don't select paint
+    paintColor=i;
+    if(activeChip) activeChip.classList.remove("active");
+    chip.classList.add("active"); activeChip=chip;
+  });
+  chip.addEventListener("dblclick",e=>{
+    e.stopPropagation();
+    // close any other open editor
+    document.querySelectorAll(".coloredit").forEach(p=>{ if(p!==pop) p.hidden=true; });
+    pop.hidden=!pop.hidden;
+    if(!pop.hidden){ nameInp.value=""; nameInp.focus(); }
+  });
+  nameInp.addEventListener("input",()=>{
+    const hex=nameToHex(nameInp.value);
+    nameInp.classList.toggle("bad", nameInp.value.trim()!=="" && hex===null);
+    if(hex!==null) setColor(hex);
+  });
+  nameInp.addEventListener("keydown",e=>{ if(e.key==="Enter") pop.hidden=true; });
+  swatchInp.addEventListener("input",()=>{ setColor(parseInt(swatchInp.value.slice(1),16)); });
+
+  if(i===0) activeChip=chip;
+  swatches.appendChild(chip); chips.push(chip);
+});
+// clicking elsewhere closes open color editors
+document.addEventListener("pointerdown",e=>{
+  if(!e.target.closest(".chip")) document.querySelectorAll(".coloredit").forEach(p=>p.hidden=true);
+});
+const pwarn=document.getElementById("pwarn");
+paintBtn.onclick=()=>{
+  if(!paintMode){
+    // entering paint mode
+    paintMode=true;
+    paintBtn.classList.add("paint-on");
+    paintBtn.textContent="DONE";
+    palette.hidden=false;
+    pwarn.hidden=true;
+    return;
+  }
+  // trying to leave paint mode — only allowed if the coloring is physically solvable
+  const v=validateState();
+  if(v.ok){
+    applyPaintedState(v.perm, v.ori);   // move pieces to match the painted colors
+    paintMode=false;
+    paintBtn.classList.remove("paint-on");
+    paintBtn.textContent="PAINT";
+    palette.hidden=true;
+    pwarn.hidden=true;
+    moveCount=0; history.length=0; $moves.textContent=0;
+    checkSolved();
+  }else{
+    pwarn.innerHTML="<b>현실에서 불가능한 배치예요.</b><br>"+v.reason+"<br>고쳐야 페인트 모드를 나갈 수 있어요.";
+    pwarn.hidden=false;
+    palette.classList.remove("shake"); void palette.offsetWidth; palette.classList.add("shake");
+  }
+};
+
+// reset every sticker to its solved face color, restore the cube, and leave paint mode
+document.getElementById("preset").onclick=()=>{
+  pieces.forEach(p=>{
+    p.position.set(0,0,0); p.quaternion.identity();   // back to solved arrangement
+    p.traverse(o=>{
+      if(o.isMesh && o.userData.faceId!=null){
+        o.userData.colorIdx = o.userData.faceId;      // restore original color slot
+        o.material.color.setHex(COLORS[o.userData.faceId]);
+        o.material.emissive.setHex(COLORS[o.userData.faceId]);
+      }
+    });
+  });
+  moveCount=0; history.length=0; $moves.textContent=0;
+  paintMode=false;
+  paintBtn.classList.remove("paint-on");
+  paintBtn.textContent="PAINT";
+  palette.hidden=true; pwarn.hidden=true;
+  checkSolved();
+};
+
+/* ---------- solver UI ---------- */
+const solveBtn=document.getElementById("solve");
+const solPanel=document.getElementById("solution");
+const slabel=document.getElementById("slabel");
+const smovesEl=document.getElementById("smoves");
+const splay=document.getElementById("splay");
+const sstep=document.getElementById("sstep");
+const sclose=document.getElementById("sclose");
+let solution=null, solIdx=0, playing=false;
+
+function renderSolution(){
+  smovesEl.innerHTML="";
+  const N=solution.length;
+  // for long (human-method) solutions, only render a window around the current move
+  const WIN=120;
+  let lo=0, hi=N;
+  if(N>WIN){ lo=Math.max(0, solIdx-20); hi=Math.min(N, lo+WIN); }
+  if(lo>0){ const e=document.createElement("div"); e.className="mv"; e.style.opacity=".5"; e.textContent=`… ${lo}수 지남`; smovesEl.appendChild(e); }
+  for(let i=lo;i<hi;i++){
+    const m=solution[i];
+    const el=document.createElement("div");
+    el.className="mv"+(i<solIdx?" done":"")+(i===solIdx?" current":"");
+    const dot=document.createElement("span"); dot.className="dot";
+    dot.style.background="#"+COLORS[m.fi].toString(16).padStart(6,"0");
+    el.appendChild(dot);
+    el.appendChild(document.createTextNode(NAMES[m.fi]+(m.dir>0?" ↻":" ↺")));
+    smovesEl.appendChild(el);
+  }
+  if(hi<N){ const e=document.createElement("div"); e.className="mv"; e.style.opacity=".5"; e.textContent=`+ ${N-hi}수 더`; smovesEl.appendChild(e); }
+}
+let solving=false;
+solveBtn.onclick=async ()=>{
+  if(animating||paintMode||solving) return;
+  solving=true;
+  solPanel.hidden=false;
+  slabel.className="slabel";
+  slabel.textContent="해답 계산 중…";
+  smovesEl.innerHTML="";
+  const res=await solveCube(12,(bound,info)=>{
+    if(bound===-1){ slabel.className="slabel human-phase"; slabel.textContent=`레이어 방식으로 푸는 중…`; }
+    else{ slabel.className="slabel"; slabel.textContent=`최적해 탐색 중… (깊이 ${bound})`; }
+  });
+  solving=false;
+  if(res.already){
+    slabel.className="slabel"; slabel.textContent="이미 다 맞춰져 있어요.";
+    solution=[]; smovesEl.innerHTML="";
+    return;
+  }
+  if(res.tooDeep){
+    slabel.className="slabel warn";
+    slabel.textContent="시간 안에 해답을 못 찾았어요. 다시 눌러 재시도하거나, 조금 풀어보세요.";
+    solution=[]; smovesEl.innerHTML="";
+    return;
+  }
+  solution=res.moves; solIdx=0;
+  if(res.optimal){
+    slabel.className="slabel";
+    slabel.innerHTML=`<span class="sbadge opt">최적해</span> 최소 ${solution.length}수`;
+  }else{
+    slabel.className="slabel";
+    slabel.innerHTML=`<span class="sbadge human">레이어 방식</span> ${solution.length}수 · 최적 아님`;
+  }
+  renderSolution();
+};
+function doStep(){
+  if(!solution||solIdx>=solution.length) return false;
+  const m=solution[solIdx];
+  turnFace(m.fi, m.dir, true, false);
+  solIdx++; renderSolution();
+  if(solIdx>=solution.length){ slabel.textContent="완성!"; }
+  return true;
+}
+sstep.onclick=()=>{ if(!animating&&!playing) doStep(); };
+splay.onclick=()=>{
+  if(playing){ playing=false; splay.textContent="▶ PLAY"; return; }
+  if(!solution||solIdx>=solution.length) return;
+  playing=true; splay.textContent="⏸ PAUSE";
+  (function run(){
+    if(!playing||solIdx>=solution.length){ playing=false; splay.textContent="▶ PLAY"; return; }
+    if(!animating) doStep();
+    setTimeout(run, 300);
+  })();
+};
+sclose.onclick=()=>{ playing=false; splay.textContent="▶ PLAY"; solPanel.hidden=true; };
+addEventListener("resize",()=>{
+  camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);
+});
+(function loop(){ renderer.render(scene,camera); requestAnimationFrame(loop); })();
+
+/* gentle intro spin */
+let intro=0;
+(function spin(){
+  if(intro<60 && !dragging){ camRot.y+=0.006; updateCam(); intro++; requestAnimationFrame(spin);}
+})();
+</script>
+</body>
+</html>
